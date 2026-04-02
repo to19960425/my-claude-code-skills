@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/gl-common.sh"
+
+gl_load_env
+
+# 引数パターン: 0引数=自動推定, 1引数=プロジェクト名指定
+if [ $# -eq 0 ]; then
+  PROJECT=$(gl_detect_project)
+elif [ $# -eq 1 ]; then
+  PROJECT="$1"
+else
+  echo "Usage: gl-issues [project-name]"
+  echo "Examples:"
+  echo "  gl-issues                           # git remoteからプロジェクト自動推定"
+  echo "  gl-issues bldplanner-bukken          # プロジェクト明示指定"
+  exit 1
+fi
+
+PROJECT_ID=$(gl_resolve_project_id "$PROJECT")
+
+# 未完了イシュー一覧を取得
+ISSUES_JSON=$(curl -sf --header "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+  "$GITLAB_URL/api/v4/projects/$PROJECT_ID/issues?state=opened&per_page=100")
+
+echo "$ISSUES_JSON" | python3 -c "
+import json, sys
+issues = json.load(sys.stdin)
+if not issues:
+    print('未完了のイシューはありません')
+    sys.exit(0)
+for i in issues:
+    print(f\"#{i['iid']}  {i['title']}  [{i['state']}]\")
+print(f\"\n合計: {len(issues)}件\")
+"

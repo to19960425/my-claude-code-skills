@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/gl-common.sh"
+
+gl_load_env
+
+# 引数パターン: 1引数=イシュー番号のみ(自動推定), 2引数=プロジェクト+イシュー番号
+if [ $# -eq 1 ]; then
+  PROJECT=$(gl_detect_project)
+  ISSUE="$1"
+elif [ $# -eq 2 ]; then
+  PROJECT="$1"
+  ISSUE="$2"
+else
+  echo "Usage: gl-issue [project-name] <issue-number>"
+  echo "Examples:"
+  echo "  gl-issue 42                        # git remoteからプロジェクト自動推定"
+  echo "  gl-issue bldplanner-bukken 42       # プロジェクト明示指定"
+  exit 1
+fi
+
+PROJECT_ID=$(gl_resolve_project_id "$PROJECT")
+
+# イシュー取得
+ISSUE_JSON=$(curl -sf --header "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+  "$GITLAB_URL/api/v4/projects/$PROJECT_ID/issues/$ISSUE")
+
+echo "$ISSUE_JSON" | python3 -c "
+import json, sys
+i = json.load(sys.stdin)
+print(f\"#{i['iid']} {i['title']}\")
+print(f\"状態: {i['state']}  作成者: {i['author']['name']}\")
+if i.get('assignees'):
+    names = ', '.join(a['name'] for a in i['assignees'])
+    print(f'担当: {names}')
+if i.get('labels'):
+    print(f\"ラベル: {', '.join(i['labels'])}\")
+if i.get('milestone'):
+    print(f\"マイルストーン: {i['milestone']['title']}\")
+print(f\"作成日: {i['created_at'][:10]}\")
+print()
+print(i.get('description') or '(説明なし)')
+"
